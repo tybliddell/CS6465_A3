@@ -89,3 +89,22 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_ringbuf(void)
+{
+  char name[16];
+  int open;
+  uint64 addr;
+
+  argstr(0, name, 16);
+  argint(1, &open);
+  argaddr(2, &addr);
+
+
+  printf("calling ringbuf stuff\n");
+  printf("name: %s, open: %d, addr: %x\n", name, open, addr);
+  ringbuf(name, open, (void*)addr);
+
+  return 0;
+}
