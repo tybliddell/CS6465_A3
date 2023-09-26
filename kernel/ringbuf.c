@@ -67,10 +67,13 @@ int alloc_ringbuf(int index)
         else
             ringbufs[index].buf[i] = temp; // ringbuf page
     }
+
+    struct book b = {0, 0};
+    memmove(ringbufs[index].book, &b, sizeof(b));
     return 0;
 }
 
-int map_ringbuf(int index)
+int map_ringbuf(int index, void **addr)
 {
     uint64 start_address = PHYSTOP - ((index + 1) * SINGLE_RINGBUF_SIZE);
     for (int i = 0; i < RINGBUF_SIZE * 2 + 1; i++)
@@ -82,7 +85,7 @@ int map_ringbuf(int index)
         {
             // map book
             map_success = mappages(user_proc->pagetable, current_address, PGSIZE, (uint64)ringbufs[index].book, PTE_R | PTE_W | PTE_U);
-            printf("Mapping book page to address %p\n", (i - 1) % RINGBUF_SIZE, current_address);
+            printf("Mapping book page to address %p\n", current_address);
         }
         else
         {
@@ -97,19 +100,30 @@ int map_ringbuf(int index)
             return -1;
         }
     }
+
+    // Copy start address to addr
+    // TODO error check copyout
+    copyout(myproc()->pagetable, (uint64) addr, (char *) &start_address, sizeof(start_address));
     return 0;
 }
 
-int create_ringbuf(const char *name)
+int create_ringbuf(const char *name, void **addr)
 {
     int index = ringbuf_exists(name); // if the ringbuf exists, it will return the index of the existing ringbuf
     if (index != -1)
     {
-        ringbufs[index].refcount++;
         printf("ringbuf %s already exists\n", name);
-        return 0;
-    }
+        uint64 start_address = PHYSTOP - ((index + 1) * SINGLE_RINGBUF_SIZE);
+        if(walkaddr(myproc()->pagetable, start_address))
+        {
+            printf("Error! ringbuf %s is already mapped in this process\n", name);
+            return -1;
+        }
 
+        ringbufs[index].refcount++;
+        return map_ringbuf(index, addr);
+    }
+    
     printf("ringbuf %s does not exist, creating\n", name);
     // does not exist, need an open spot
     int open_spot = find_open_ringbuf();
@@ -127,50 +141,69 @@ int create_ringbuf(const char *name)
     }
 
     // ringbufs is now allocated, map them
-    int map_sucess = map_ringbuf(open_spot);
+    int map_sucess = map_ringbuf(open_spot, addr);
     if (map_sucess == -1)
     {
         printf("Error! Unsuccessful mapping\n");
         return -1;
     }
 
-    // TODO create an empty book
     ringbufs[open_spot].refcount++;
     strncpy(ringbufs[open_spot].name, name, sizeof(name) / sizeof(char));
 
-    // TODO set addr to correct address
     return 0;
 }
 
 int close_ringbuf(const char *name)
 {
-    int index = ringbuf_exists(name); // if the ringbuf exists, it will return the index of the existing ringbuf
+    int index = ringbuf_exists(name);
     if (index == -1)
     {
         printf("Error! Cannot close ringbuf %s since it doesn't exist\n", name);
         return -1;
     }
 
+    uint64 start_address = PHYSTOP - ((index + 1) * SINGLE_RINGBUF_SIZE);
+    printf("Unmapping ringbuf %s for proc\n", name);
+    uvmunmap(myproc()->pagetable, start_address, (RINGBUF_SIZE * 2 + 1), 0);
+
+    ringbufs[index].refcount--;
+    if(!ringbufs[index].refcount)
+    {
+        printf("Refcount is 0, freeing physical pages\n");
+        for(int i = 0; i < RINGBUF_SIZE; i++)
+        {
+            kfree(ringbufs[index].buf[i]);
+            printf("Freeing page %d, address %p\n", i, ringbufs[index].buf[i]);
+        }
+        printf("Freeing book page\n");
+        kfree(ringbufs[index].book);
+
+        // Clear name
+        strncpy(ringbufs[index].name, "", sizeof(""));
+    }
     return 0;
 }
 
 int ringbuf(const char *name, int open, void **addr)
 {
     if (!name)
-    { // Invalid name
+    {
         printf("Error! Invalid name\n");
         return -1;
     }
 
-    // TODO acquire lock and unacquire
+    int ret;
+    acquire(&ringbuf_lock);
     if (open)
     {
-        create_ringbuf(name);
+        ret = create_ringbuf(name, addr);
     }
     else
     {
-        close_ringbuf(name);
+        ret = close_ringbuf(name);
     }
 
-    return 0;
+    release(&ringbuf_lock);
+    return ret;
 }
