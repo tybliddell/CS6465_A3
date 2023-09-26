@@ -9,5 +9,11 @@ int main(int argc, char *argv[])
     void** addr = 0;
     ringbuf(name, open, addr);
 
+    printf("returned from ringbuf syscall\n");
+    ringbuf("two", open, addr);    
+
+    printf("exiting user program\n");
+
+    // TODO close the ringbufs before exiting
     return 0;
 }

@@ -102,9 +102,5 @@ sys_ringbuf(void)
   argaddr(2, &addr);
 
 
-  printf("calling ringbuf stuff\n");
-  printf("name: %s, open: %d, addr: %x\n", name, open, addr);
-  ringbuf(name, open, (void*)addr);
-
-  return 0;
+  return ringbuf(name, open, (void*)addr);
 }

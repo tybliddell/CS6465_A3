@@ -108,7 +108,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 
 // ringbuf.c
-void            ringbuf(const char *name, int open, void **addr);
+int             ringbuf(const char *name, int open, void **addr);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
