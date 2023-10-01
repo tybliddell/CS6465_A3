@@ -1,5 +1,4 @@
 #include "kernel/types.h"
-#include "kernel/fcntl.h"
 #include "user/user.h"
 #include "kernel/ringbuf.h"
 #include "kernel/riscv.h"
@@ -7,14 +6,9 @@
 struct user_ring_buf
 {
     void *buf;
-    struct ubook *book_page;
+    struct book *book_page;
     int exists;
     char *name;
-};
-
-struct ubook
-{
-    uint64 read_done, write_done;
 };
 
 static struct user_ring_buf user_ring_bufs[MAX_RINGBUFS];
@@ -59,7 +53,7 @@ int create_ringbuf(char *name)
     }
 
     user_ring_bufs[open_spot].buf = (void *)((uint64)addr + PGSIZE);
-    user_ring_bufs[open_spot].book_page = (struct ubook *)addr;
+    user_ring_bufs[open_spot].book_page = (struct book *)addr;
     user_ring_bufs[open_spot].exists = 1;
     user_ring_bufs[open_spot].name = name;
     user_ring_bufs[open_spot].book_page->read_done = (uint64)addr + PGSIZE;
@@ -83,7 +77,7 @@ int free_ringbuf(int fd)
 
 void ringbuf_start_read(int ring_desc, char **addr, int *bytes)
 {
-    *addr = (char*)user_ring_bufs[ring_desc].buf + (load(&user_ring_bufs[ring_desc].book_page->read_done) % (RINGBUF_SIZE*PGSIZE));
+    *addr = (char *)user_ring_bufs[ring_desc].buf + (load(&user_ring_bufs[ring_desc].book_page->read_done) % (RINGBUF_SIZE * PGSIZE));
     *bytes = load(&user_ring_bufs[ring_desc].book_page->write_done) - load(&user_ring_bufs[ring_desc].book_page->read_done);
 }
 
@@ -101,16 +95,16 @@ void ringbuf_finish_read(int ring_desc, int bytes)
 
 void ringbuf_start_write(int ring_desc, char **addr, int *bytes)
 {
-    *addr = (char*)user_ring_bufs[ring_desc].buf + (load(&user_ring_bufs[ring_desc].book_page->write_done) % (RINGBUF_SIZE*PGSIZE));
+    *addr = (char *)user_ring_bufs[ring_desc].buf + (load(&user_ring_bufs[ring_desc].book_page->write_done) % (RINGBUF_SIZE * PGSIZE));
     // PGSIZE - (rd - wd)
-    *bytes = RINGBUF_SIZE*PGSIZE - (load(&user_ring_bufs[ring_desc].book_page->write_done) - load(&user_ring_bufs[ring_desc].book_page->read_done));
+    *bytes = RINGBUF_SIZE * PGSIZE - (load(&user_ring_bufs[ring_desc].book_page->write_done) - load(&user_ring_bufs[ring_desc].book_page->read_done));
 }
 
 void ringbuf_finish_write(int ring_desc, int bytes)
 {
     uint64 new_write_done = load(&user_ring_bufs[ring_desc].book_page->write_done) + bytes;
     store(&user_ring_bufs[ring_desc].book_page->write_done, new_write_done);
-    
+
     // if our current pointer is at or greater than the size of doubly mapped ringbuf
     // if (user_ring_bufs[ring_desc].book_page->write_done >= (uint64)user_ring_bufs[ring_desc].buf + (RINGBUF_SIZE * PGSIZE))
     // {

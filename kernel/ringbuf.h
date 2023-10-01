@@ -14,5 +14,3 @@ struct book
 {
     uint64 read_done, write_done;
 };
-
-

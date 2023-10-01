@@ -4,9 +4,6 @@
 #include "param.h"
 #include "spinlock.h"
 #include "proc.h"
-#include "fs.h"
-#include "sleeplock.h"
-#include "file.h"
 #include "memlayout.h"
 #include "ringbuf.h"
 
