@@ -8,23 +8,8 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "memlayout.h"
+#include "ringbuf.h"
 
-#define MAX_RINGBUFS 10
-#define RINGBUF_SIZE 16
-#define SINGLE_RINGBUF_SIZE (PGSIZE * (RINGBUF_SIZE * 2 + 1))
-
-struct ringbuf
-{
-    int refcount; // 0 for empty slot
-    char name[16];
-    void *buf[RINGBUF_SIZE]; // physical addresses of pages that comprise the ring buffer
-    void *book;
-};
-
-struct book
-{
-    uint64 read_done, write_done;
-};
 
 struct spinlock ringbuf_lock;
 struct ringbuf ringbufs[MAX_RINGBUFS];
@@ -53,7 +38,7 @@ int alloc_ringbuf(int index)
     for (int i = 0; i < RINGBUF_SIZE + 1; i++)
     {
         void *temp = kalloc();
-        printf("Allocated index %d: %p\n", i, (uint64)temp);
+        // printf("Allocated index %d: %p\n", i, (uint64)temp);
 
         if (!temp)
         {
@@ -62,6 +47,7 @@ int alloc_ringbuf(int index)
                 kfree(ringbufs[index].buf[j]);
             return -1;
         }
+        memset(temp, 0, PGSIZE);
         if (i == RINGBUF_SIZE)
             ringbufs[index].book = temp; // bookkeeping page
         else
@@ -85,25 +71,29 @@ int map_ringbuf(int index, void **addr)
         {
             // map book
             map_success = mappages(user_proc->pagetable, current_address, PGSIZE, (uint64)ringbufs[index].book, PTE_R | PTE_W | PTE_U);
-            printf("Mapping book page to address %p\n", current_address);
+            // printf("Mapping book page to address %p\n", current_address);
         }
         else
         {
             // map the buf pages
             map_success = mappages(user_proc->pagetable, current_address, PGSIZE, (uint64)ringbufs[index].buf[(i - 1) % RINGBUF_SIZE], PTE_R | PTE_W | PTE_U);
-            printf("Mapping page %d, address %p to address %p\n", (i - 1) % RINGBUF_SIZE, ringbufs[index].buf[(i - 1) % RINGBUF_SIZE], current_address);
+            // printf("Mapping page %d, address %p to address %p\n", (i - 1) % RINGBUF_SIZE, ringbufs[index].buf[(i - 1) % RINGBUF_SIZE], current_address);
         }
         if (map_success == -1)
         {
-            // TODO: handle error Mckay
-            printf("Error mapping, need to unmap mapped pages and free all pages\n");
+            printf("Error mapping page %d, unmapping from user space\n", i);
+            uvmunmap(user_proc->pagetable, start_address, i, 0);
             return -1;
         }
     }
 
     // Copy start address to addr
-    // TODO error check copyout
-    copyout(myproc()->pagetable, (uint64) addr, (char *) &start_address, sizeof(start_address));
+    if(copyout(myproc()->pagetable, (uint64) addr, (char *) &start_address, sizeof(start_address)) == -1) 
+    {
+        printf("Error copying start address to addr, unmapping ringbuf from user space\n");
+        uvmunmap(myproc()->pagetable, start_address, RINGBUF_SIZE*2 + 1, 0);
+        return -1;
+    }
     return 0;
 }
 
@@ -112,7 +102,7 @@ int create_ringbuf(const char *name, void **addr)
     int index = ringbuf_exists(name); // if the ringbuf exists, it will return the index of the existing ringbuf
     if (index != -1)
     {
-        printf("ringbuf %s already exists\n", name);
+        // printf("ringbuf %s already exists\n", name);
         uint64 start_address = PHYSTOP - ((index + 1) * SINGLE_RINGBUF_SIZE);
         if(walkaddr(myproc()->pagetable, start_address))
         {
@@ -124,7 +114,7 @@ int create_ringbuf(const char *name, void **addr)
         return map_ringbuf(index, addr);
     }
     
-    printf("ringbuf %s does not exist, creating\n", name);
+    // printf("ringbuf %s does not exist, creating\n", name);
     // does not exist, need an open spot
     int open_spot = find_open_ringbuf();
     if (open_spot == -1)
@@ -164,19 +154,19 @@ int close_ringbuf(const char *name)
     }
 
     uint64 start_address = PHYSTOP - ((index + 1) * SINGLE_RINGBUF_SIZE);
-    printf("Unmapping ringbuf %s for proc\n", name);
+    // printf("Unmapping ringbuf %s for proc\n", name);
     uvmunmap(myproc()->pagetable, start_address, (RINGBUF_SIZE * 2 + 1), 0);
 
     ringbufs[index].refcount--;
     if(!ringbufs[index].refcount)
     {
-        printf("Refcount is 0, freeing physical pages\n");
+        // printf("Refcount is 0, freeing physical pages\n");
         for(int i = 0; i < RINGBUF_SIZE; i++)
         {
             kfree(ringbufs[index].buf[i]);
-            printf("Freeing page %d, address %p\n", i, ringbufs[index].buf[i]);
+            // printf("Freeing page %d, address %p\n", i, ringbufs[index].buf[i]);
         }
-        printf("Freeing book page\n");
+        // printf("Freeing book page\n");
         kfree(ringbufs[index].book);
 
         // Clear name

@@ -1,5 +1,4 @@
 #include "kernel/types.h"
-#include "kernel/stat.h"
 #include "user/user.h"
 
 int main(int argc, char *argv[])
@@ -7,7 +6,7 @@ int main(int argc, char *argv[])
     const char name[16] = "test";
     int open = 1;
     void* addr;
-    ringbuf(name, open, &addr);
+    printf("%d", ringbuf(name, open, &addr));
 
     // printf("returned from ringbuf syscall\n");
     // ringbuf("two", open, addr);    

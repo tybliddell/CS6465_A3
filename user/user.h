@@ -42,3 +42,11 @@ void free(void *);
 int atoi(const char *);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
+
+// uringbuf.c
+int create_ringbuf(char *name);
+int free_ringbuf(int fd);
+void ringbuf_start_read(int ring_desc, char **addr, int *bytes);
+void ringbuf_finish_read(int ring_desc, int bytes);
+void ringbuf_start_write(int ring_desc, char **addr, int *bytes);
+void ringbuf_finish_write(int ring_desc, int bytes);
