@@ -13,7 +13,7 @@ main(int argc, char *argv[])
             printf("Child has opened ringbuf magicbuf\n");
         }
 
-        sleep(50);
+        sleep(8);
         ringbuf("magicbuf", 0, addr);
         printf("Child has closed ringbuf magicbuf\n");
         return 0;
@@ -21,12 +21,12 @@ main(int argc, char *argv[])
     else
     { // Parent
         void **addr = 0;
-        sleep(10);
+        sleep(2);
         if(ringbuf("magicbuf", 1, addr) == 0)
         {
             printf("Parent has opened ringbuf magicbuf\n");
         }
-        sleep(10);
+        sleep(2);
         ringbuf("magicbuf", 0, addr);
         printf("Parent has closed ringbuf magicbuf\n");
         wait(0);

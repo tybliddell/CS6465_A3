@@ -4,15 +4,30 @@
 #include "kernel/ringbuf.h"
 #include "kernel/riscv.h"
 
-int g_seed = 0;
+/*
+*   Bandwidth of original xv6 pipe:   .111 MB/cycle 
+*   Bandwidth of fastest xv6 pipe:    .588 MB/cycle
+*   Bandwidth of magic ring buffer:   2.22 MB/cycle
+*/
 
-void fast_srand(int seed) {
-    g_seed = seed;
+/*
+*   Original:  10MB/90 cycles
+*   Fastest:   10MB/17 cycles
+*   Magic:     100MB/45 cycles
+*/
+const int TEST_SIZE = 1024 * 1024 * 100; // 100MB
+int SEND_SEED = 555;
+int DATA_SEED = 12;
+
+int data_rand()
+{
+    DATA_SEED = (214013 * DATA_SEED + 2531011);
+    return (DATA_SEED >> 16) & 0x7FFF;
 }
-
-int fast_rand(void) {
-    g_seed = (214013*g_seed+2531011);
-    return (g_seed>>16)&0x7FFF;
+int send_amount_rand()
+{
+    SEND_SEED = (214013 * SEND_SEED + 2531011);
+    return (SEND_SEED >> 16) & 0x7FFF;
 }
 
 int main(int argc, char *argv[])
@@ -20,65 +35,65 @@ int main(int argc, char *argv[])
     if (fork() == 0)
     { // Child
         int fd = create_ringbuf("magic!");
-        sleep(10);
+        int have_sent = 0;
+        int num_write = 0;
 
-        // hello world test
-        while (1)
+        while (have_sent < TEST_SIZE) // 1mb
+        {
+            int can_write;
+            char *addr;
+            ringbuf_start_write(fd, &addr, &can_write);
+            if (can_write)
+            {
+                int going_to_write = can_write - (send_amount_rand() % can_write);
+                // printf("Can write %d bytes, going to write %d bytes\n", can_write, going_to_write);
+                for (int i = 0; i < going_to_write; i++)
+                {
+                    char val = 'a';
+                    val += data_rand() % 26;
+                    memmove(addr + i, (void *)&val, 1);
+                }
+                ringbuf_finish_write(fd, going_to_write);
+                have_sent += going_to_write;
+                num_write++;
+            }
+        }
+        printf("Done writing all data, completed %d writes\n", num_write);
+        free_ringbuf(fd);
+        exit(0);
+    }
+    else
+    { // Parent
+        int fd = create_ringbuf("magic!");
+        int have_read = 0;
+        int start = uptime();
+
+        while (have_read < TEST_SIZE)
         {
             int can_read;
             char *addr;
             ringbuf_start_read(fd, &addr, &can_read);
-            // printf("Current can read: %d, current addr: %p\n", can_read, addr);
 
             if (can_read)
             {
-                char data[can_read];
-                memmove(data, addr, can_read);
-                printf("Got our %d bytes of data: %s\n", can_read, data);
+                for(int i = 0; i < can_read; i++)
+                {
+                    char expected = 'a' + data_rand() % 26;
+                    if(*(addr + i) != expected)
+                    {
+                        printf("Error! Expected %d, got %d\n", expected, *(addr + i));
+                        exit(-1);
+                    }
+                }
                 ringbuf_finish_read(fd, can_read);
+                have_read += can_read;
             }
-            // printf("Still nothing to read!\n");
         }
-
-        // test 2
-        //  while(1) {
-
-        // }
-
-        free_ringbuf(fd);
-    }
-    else
-    { // Parent
-        sleep(5);
-        int fd = create_ringbuf("magic!");
-        int can_write;
-        char *addr;
-        ringbuf_start_write(fd, &addr, &can_write);
-        memmove(addr, "this is number one loser peepee haha", strlen("this is number one loser peepee haha"));
-        ringbuf_finish_write(fd, strlen("this is number one loser peepee haha"));
-        sleep(5);
-
-        ringbuf_start_write(fd, &addr, &can_write);
-        memmove(addr, "mckay has itty bitty penis", strlen("mckay has itty bitty penis"));
-        ringbuf_finish_write(fd, strlen("mckay has itty bitty penis"));
-
-        sleep(5);
-        ringbuf_start_write(fd, &addr, &can_write);
-        printf("can write %d bytes\n", can_write);
-        for(int i = 0; i < 3577; i++) {
-            char val = 'a';
-            int ran = fast_rand() % 26;
-            val += ran;
-            // printf("val: %c, ran: %d\n", val, ran);
-            // printf("moving\n");
-            memmove(addr + i, (void*)&val, 1);
-        }
-        printf("piss\n");
-        ringbuf_finish_write(fd, 3577);
-        
-
-        free_ringbuf(fd);
         wait(0);
+        int end = uptime();
+        printf("Done reading, took %d\n", end-start);
+
+        free_ringbuf(fd);
     }
 
     return 0;

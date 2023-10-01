@@ -62,8 +62,8 @@ int create_ringbuf(char *name)
     user_ring_bufs[open_spot].book_page = (struct ubook *)addr;
     user_ring_bufs[open_spot].exists = 1;
     user_ring_bufs[open_spot].name = name;
-    user_ring_bufs[open_spot].book_page->read_done = (uint64)addr;
-    user_ring_bufs[open_spot].book_page->write_done = (uint64)addr;
+    user_ring_bufs[open_spot].book_page->read_done = (uint64)addr + PGSIZE;
+    user_ring_bufs[open_spot].book_page->write_done = (uint64)addr + PGSIZE;
 
     return open_spot;
 }
